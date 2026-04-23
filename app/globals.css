@@ -26,6 +26,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -80,6 +81,29 @@ h2 {
   box-shadow: 0 8px 24px rgba(27, 31, 35, 0.08);
 }
 
+.loginPanel {
+  gap: 12px;
+}
+
+.loginPanel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.loginButton {
+  display: inline-grid;
+  min-height: 44px;
+  width: fit-content;
+  place-items: center;
+  border-radius: 8px;
+  padding: 0 18px;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .editorGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.95fr);
@@ -128,6 +152,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -142,6 +167,11 @@ input {
   padding: 0 12px;
 }
 
+select {
+  min-height: 44px;
+  padding: 0 38px 0 12px;
+}
+
 textarea {
   min-height: 150px;
   padding: 12px;
@@ -154,9 +184,21 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(36, 116, 90, 0.13);
+}
+
+.draftToolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfa;
 }
 
 .toggleRow {
@@ -435,7 +477,8 @@ button:disabled {
   }
 
   .editorGrid,
-  .fieldRow {
+  .fieldRow,
+  .draftToolbar {
     grid-template-columns: 1fr;
   }
 

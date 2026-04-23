@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractBacklogItems } from "@/lib/backlog";
-import { appendMinutesToSheet } from "@/lib/google";
+import { appendMinutesToSheet, googleSession } from "@/lib/google";
 import { createJiraBacklogItems } from "@/lib/jira";
 
 export const runtime = "nodejs";
@@ -25,6 +25,11 @@ function validatePayload(raw) {
 
 export async function POST(request) {
   try {
+    const session = await googleSession();
+    if (!session.authenticated) {
+      return NextResponse.json({ ok: false, error: "Google login is required." }, { status: 401 });
+    }
+
     const payload = validatePayload(await request.json());
     const items = extractBacklogItems(payload.plan);
     const jira = await createJiraBacklogItems(payload.plan);

@@ -37,6 +37,7 @@ nvm use
 
 ```bash
 CLIENT_SECRET_FILE=client_secret_파일명.json
+ALLOWED_GOOGLE_EMAIL=younghune135@gmail.com
 GOOGLE_SPREADSHEET_ID=스프레드시트_ID
 GOOGLE_SHEET_TAB=시트_탭_이름
 NEXT_PUBLIC_APP_URL=http://localhost:3000

@@ -20,6 +20,9 @@ const samplePlan = `# PPT 반영사항
 1. silhouette, Calinski 에서 cluster 의 유의미 여부가 MI과 상관있는지 고민
 2. cluster analysis에 k 사이즈를 더 키우거나 elbow method 기준 k 선택 방식으로 다시 확인 필요`;
 
+const DRAFT_STORAGE_KEY = "meeting-log-drafts";
+const MAX_DRAFTS = 20;
+
 function todayInSeoul() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
@@ -27,6 +30,17 @@ function todayInSeoul() {
     month: "2-digit",
     day: "2-digit"
   }).format(new Date());
+}
+
+function formatDraftTime(value) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(new Date(value));
 }
 
 function extractBacklogItems(markdown) {
@@ -135,9 +149,28 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [drafts, setDrafts] = useState([]);
+  const [selectedDraftId, setSelectedDraftId] = useState("");
+  const [session, setSession] = useState({ loading: true, authenticated: false, allowedEmail: "" });
+
+  useEffect(() => {
+    fetch("/api/auth/session")
+      .then((response) => response.json())
+      .then((data) => setSession({ loading: false, ...data }))
+      .catch(() => setSession({ loading: false, authenticated: false, allowedEmail: "" }));
+  }, []);
 
   useEffect(() => {
     setForm((current) => ({ ...current, date: todayInSeoul() }));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || "[]");
+      setDrafts(Array.isArray(saved) ? saved : []);
+    } catch {
+      setDrafts([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -163,6 +196,38 @@ export default function Home() {
       minutes: sampleMinutes,
       plan: samplePlan
     }));
+  }
+
+  function saveDraft() {
+    const now = new Date().toISOString();
+    const draft = {
+      id: now,
+      savedAt: now,
+      form
+    };
+    const nextDrafts = [draft, ...drafts].slice(0, MAX_DRAFTS);
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(nextDrafts));
+    setDrafts(nextDrafts);
+    setSelectedDraftId(draft.id);
+    setToast({ type: "success", text: "임시 저장했습니다." });
+  }
+
+  function loadDraft(event) {
+    const id = event.target.value;
+    setSelectedDraftId(id);
+    const draft = drafts.find((entry) => entry.id === id);
+    if (!draft) {
+      return;
+    }
+    setForm({
+      date: draft.form.date || todayInSeoul(),
+      registrant: draft.form.registrant || "정용훈",
+      topic: draft.form.topic || "",
+      minutes: draft.form.minutes || "",
+      plan: draft.form.plan || "",
+      updateSheets: draft.form.updateSheets ?? true
+    });
+    setToast({ type: "success", text: `${formatDraftTime(draft.savedAt)} 임시 저장을 불러왔습니다.` });
   }
 
   async function submit(event) {
@@ -223,8 +288,36 @@ export default function Home() {
           </a>
         </header>
 
+        {!session.loading && !session.authenticated ? (
+          <section className="formPanel loginPanel">
+            <h2>Google 로그인</h2>
+            <p>{session.allowedEmail || "허용된 Google 계정"} 계정으로만 사용할 수 있습니다.</p>
+            <a className="loginButton" href="/api/auth/google/start">
+              Google로 로그인
+            </a>
+          </section>
+        ) : null}
+
+        {!session.loading && session.authenticated ? (
         <form className="editorGrid compact" onSubmit={submit}>
           <section className="formPanel">
+            <div className="draftToolbar">
+              <button type="button" className="ghost" onClick={saveDraft}>
+                임시 저장
+              </button>
+              <label>
+                임시 저장 불러오기
+                <select value={selectedDraftId} onChange={loadDraft}>
+                  <option value="">저장 시각 선택</option>
+                  {drafts.map((draft) => (
+                    <option key={draft.id} value={draft.id}>
+                      {formatDraftTime(draft.savedAt)} {draft.form.topic ? `- ${draft.form.topic}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <div className="fieldRow">
               <label>
                 날짜
@@ -294,6 +387,7 @@ export default function Home() {
             </div>
           </section>
         </form>
+        ) : null}
       </section>
 
       {preview ? (
