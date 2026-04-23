@@ -37,7 +37,10 @@ nvm use
 
 ```bash
 CLIENT_SECRET_FILE=client_secret_파일명.json
-ALLOWED_GOOGLE_EMAIL=younghune135@gmail.com
+PASSWORD=접속_비밀번호
+SECURITY_ALERT_EMAIL=younghune135@gmail.com
+AUTH_MAX_FAILURES=5
+AUTH_LOCK_MINUTES=60
 GOOGLE_SPREADSHEET_ID=스프레드시트_ID
 GOOGLE_SHEET_TAB=시트_탭_이름
 NEXT_PUBLIC_APP_URL=http://localhost:3000

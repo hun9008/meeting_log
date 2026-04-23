@@ -2,6 +2,7 @@
 .env.local
 .env.*.local
 .google_token.json
+.auth_security.json
 *.pem
 *.key
 *.p12

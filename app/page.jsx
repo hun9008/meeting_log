@@ -151,13 +151,14 @@ export default function Home() {
   const [preview, setPreview] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [selectedDraftId, setSelectedDraftId] = useState("");
-  const [session, setSession] = useState({ loading: true, authenticated: false, allowedEmail: "" });
+  const [session, setSession] = useState({ loading: true, authenticated: false, passwordConfigured: false });
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     fetch("/api/auth/session")
       .then((response) => response.json())
       .then((data) => setSession({ loading: false, ...data }))
-      .catch(() => setSession({ loading: false, authenticated: false, allowedEmail: "" }));
+      .catch(() => setSession({ loading: false, authenticated: false, passwordConfigured: false }));
   }, []);
 
   useEffect(() => {
@@ -278,24 +279,50 @@ export default function Home() {
     }
   }
 
+  async function login(event) {
+    event.preventDefault();
+    setToast(null);
+
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "로그인에 실패했습니다.");
+      }
+      setSession((current) => ({ ...current, authenticated: true }));
+      setPassword("");
+      setToast({ type: "success", text: "로그인했습니다." });
+    } catch (error) {
+      setToast({ type: "warn", text: error.message });
+    }
+  }
+
   return (
     <main className="appShell">
       <section className="workspace">
         <header className="topbar">
           <h1>MEETING LOG</h1>
-          <a className="googleButton" href="/api/auth/google/start" title="Google Sheets 연결" aria-label="Google Sheets 연결">
-            G
-          </a>
+          {session.authenticated ? (
+            <a className="googleButton" href="/api/auth/google/start" title="Google Sheets 연결" aria-label="Google Sheets 연결">
+              G
+            </a>
+          ) : null}
         </header>
 
         {!session.loading && !session.authenticated ? (
-          <section className="formPanel loginPanel">
-            <h2>Google 로그인</h2>
-            <p>{session.allowedEmail || "허용된 Google 계정"} 계정으로만 사용할 수 있습니다.</p>
-            <a className="loginButton" href="/api/auth/google/start">
-              Google로 로그인
-            </a>
-          </section>
+          <form className="formPanel loginPanel" onSubmit={login}>
+            <h2>비밀번호 인증</h2>
+            <p>{session.passwordConfigured ? "비밀번호를 입력하면 사용할 수 있습니다." : "PASSWORD 환경변수가 설정되지 않았습니다."}</p>
+            <label>
+              비밀번호
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+            </label>
+            <button type="submit">로그인</button>
+          </form>
         ) : null}
 
         {!session.loading && session.authenticated ? (
@@ -305,6 +332,9 @@ export default function Home() {
               <button type="button" className="ghost" onClick={saveDraft}>
                 임시 저장
               </button>
+              <a className="ghostLink" href="/api/auth/google/start">
+                Google Sheets 연결
+              </a>
               <label>
                 임시 저장 불러오기
                 <select value={selectedDraftId} onChange={loadDraft}>

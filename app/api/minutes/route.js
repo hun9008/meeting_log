@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { extractBacklogItems } from "@/lib/backlog";
-import { appendMinutesToSheet, googleSession } from "@/lib/google";
+import { appendMinutesToSheet } from "@/lib/google";
 import { createJiraBacklogItems } from "@/lib/jira";
+import { passwordSession } from "@/lib/passwordAuth";
 
 export const runtime = "nodejs";
 
@@ -25,9 +26,9 @@ function validatePayload(raw) {
 
 export async function POST(request) {
   try {
-    const session = await googleSession();
+    const session = await passwordSession();
     if (!session.authenticated) {
-      return NextResponse.json({ ok: false, error: "Google login is required." }, { status: 401 });
+      return NextResponse.json({ ok: false, error: "비밀번호 인증이 필요합니다." }, { status: 401 });
     }
 
     const payload = validatePayload(await request.json());

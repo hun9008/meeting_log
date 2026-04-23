@@ -91,7 +91,8 @@ h2 {
   line-height: 1.5;
 }
 
-.loginButton {
+.loginButton,
+.ghostLink {
   display: inline-grid;
   min-height: 44px;
   width: fit-content;
@@ -102,6 +103,12 @@ h2 {
   color: #ffffff;
   font-weight: 900;
   text-decoration: none;
+}
+
+.ghostLink {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
 }
 
 .editorGrid {
@@ -192,7 +199,7 @@ textarea:focus {
 
 .draftToolbar {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto auto minmax(0, 1fr);
   gap: 12px;
   align-items: end;
   border: 1px solid var(--line);
