@@ -21,7 +21,31 @@ const samplePlan = `# PPT 반영사항
 2. cluster analysis에 k 사이즈를 더 키우거나 elbow method 기준 k 선택 방식으로 다시 확인 필요`;
 
 const DRAFT_STORAGE_KEY = "meeting-log-drafts";
+const AUTO_SAVE_STORAGE_KEY = "meeting-log-autosave";
 const MAX_DRAFTS = 20;
+const DEFAULT_FORM = {
+  date: "",
+  registrant: "정용훈",
+  topic: "",
+  minutes: "",
+  plan: "",
+  updateSheets: true
+};
+
+function normalizeForm(raw = {}) {
+  return {
+    date: String(raw.date || "").trim(),
+    registrant: String(raw.registrant || DEFAULT_FORM.registrant).trim() || DEFAULT_FORM.registrant,
+    topic: String(raw.topic || ""),
+    minutes: String(raw.minutes || ""),
+    plan: String(raw.plan || ""),
+    updateSheets: raw.updateSheets ?? true
+  };
+}
+
+function hasRestorableContent(form) {
+  return Boolean(form.topic || form.minutes || form.plan);
+}
 
 function todayInSeoul() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -138,14 +162,7 @@ function markdownToHtml(markdown) {
 }
 
 export default function Home() {
-  const [form, setForm] = useState({
-    date: "",
-    registrant: "정용훈",
-    topic: "",
-    minutes: "",
-    plan: "",
-    updateSheets: true
-  });
+  const [form, setForm] = useState(DEFAULT_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -153,6 +170,7 @@ export default function Home() {
   const [selectedDraftId, setSelectedDraftId] = useState("");
   const [session, setSession] = useState({ loading: true, authenticated: false, passwordConfigured: false });
   const [password, setPassword] = useState("");
+  const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/session")
@@ -162,17 +180,50 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    setForm((current) => ({ ...current, date: todayInSeoul() }));
+    setForm((current) => (current.date ? current : { ...current, date: todayInSeoul() }));
   }, []);
 
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || "[]");
       setDrafts(Array.isArray(saved) ? saved : []);
+
+      const autoSaved = JSON.parse(localStorage.getItem(AUTO_SAVE_STORAGE_KEY) || "null");
+      const restoredForm = normalizeForm(autoSaved?.form);
+      if (hasRestorableContent(restoredForm)) {
+        setForm((current) => ({
+          ...current,
+          ...restoredForm,
+          date: restoredForm.date || current.date || todayInSeoul()
+        }));
+        setToast({ type: "success", text: "이전에 작성 중이던 내용을 복원했습니다." });
+      }
     } catch {
       setDrafts([]);
+    } finally {
+      setStorageReady(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!storageReady) {
+      return;
+    }
+
+    const normalized = normalizeForm(form);
+    if (hasRestorableContent(normalized)) {
+      localStorage.setItem(
+        AUTO_SAVE_STORAGE_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          form: normalized
+        })
+      );
+      return;
+    }
+
+    localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
+  }, [form, storageReady]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -204,7 +255,7 @@ export default function Home() {
     const draft = {
       id: now,
       savedAt: now,
-      form
+      form: normalizeForm(form)
     };
     const nextDrafts = [draft, ...drafts].slice(0, MAX_DRAFTS);
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(nextDrafts));
@@ -220,14 +271,7 @@ export default function Home() {
     if (!draft) {
       return;
     }
-    setForm({
-      date: draft.form.date || todayInSeoul(),
-      registrant: draft.form.registrant || "정용훈",
-      topic: draft.form.topic || "",
-      minutes: draft.form.minutes || "",
-      plan: draft.form.plan || "",
-      updateSheets: draft.form.updateSheets ?? true
-    });
+    setForm({ ...normalizeForm(draft.form), date: draft.form.date || todayInSeoul() });
     setToast({ type: "success", text: `${formatDraftTime(draft.savedAt)} 임시 저장을 불러왔습니다.` });
   }
 
@@ -245,6 +289,13 @@ export default function Home() {
       const result = await response.json();
 
       if (result.authRequired) {
+        localStorage.setItem(
+          AUTO_SAVE_STORAGE_KEY,
+          JSON.stringify({
+            savedAt: new Date().toISOString(),
+            form: normalizeForm(form)
+          })
+        );
         const jiraText = result.jira?.created?.length
           ? `Jira ${result.jira.created.length}개는 생성되었습니다. `
           : "";
@@ -271,6 +322,7 @@ export default function Home() {
         : result.jira?.sprint?.sprintName
           ? ` Sprint: ${result.jira.sprint.sprintName}.`
           : "";
+      localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
       setToast({ type: "success", text: `${sheetsText}Jira ${jiraCount}개 생성 완료.${sprintText}` });
     } catch (error) {
       setToast({ type: "warn", text: error.message });
