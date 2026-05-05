@@ -23,6 +23,7 @@ const samplePlan = `# PPT 반영사항
 const DRAFT_STORAGE_KEY = "meeting-log-drafts";
 const AUTO_SAVE_STORAGE_KEY = "meeting-log-autosave";
 const MAX_DRAFTS = 20;
+const AUTO_SAVE_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_FORM = {
   date: "",
   registrant: "정용훈",
@@ -45,6 +46,23 @@ function normalizeForm(raw = {}) {
 
 function hasRestorableContent(form) {
   return Boolean(form.topic || form.minutes || form.plan);
+}
+
+function freshDefaultForm() {
+  return { ...DEFAULT_FORM, date: todayInSeoul() };
+}
+
+function isExpiredAutoSave(savedAt) {
+  if (!savedAt) {
+    return true;
+  }
+
+  const savedTime = new Date(savedAt).getTime();
+  if (Number.isNaN(savedTime)) {
+    return true;
+  }
+
+  return Date.now() - savedTime > AUTO_SAVE_TTL_MS;
 }
 
 function todayInSeoul() {
@@ -189,14 +207,18 @@ export default function Home() {
       setDrafts(Array.isArray(saved) ? saved : []);
 
       const autoSaved = JSON.parse(localStorage.getItem(AUTO_SAVE_STORAGE_KEY) || "null");
-      const restoredForm = normalizeForm(autoSaved?.form);
-      if (hasRestorableContent(restoredForm)) {
+      if (autoSaved && isExpiredAutoSave(autoSaved.savedAt)) {
+        localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
+      } else {
+        const restoredForm = normalizeForm(autoSaved?.form);
+        if (hasRestorableContent(restoredForm)) {
         setForm((current) => ({
           ...current,
           ...restoredForm,
           date: restoredForm.date || current.date || todayInSeoul()
         }));
         setToast({ type: "success", text: "이전에 작성 중이던 내용을 복원했습니다." });
+      }
       }
     } catch {
       setDrafts([]);
@@ -248,6 +270,13 @@ export default function Home() {
       minutes: sampleMinutes,
       plan: samplePlan
     }));
+  }
+
+  function refreshForm() {
+    setForm(freshDefaultForm());
+    setSelectedDraftId("");
+    localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
+    setToast({ type: "success", text: "입력 내용을 새로 시작했습니다." });
   }
 
   function saveDraft() {
@@ -462,6 +491,9 @@ export default function Home() {
             <div className="actions">
               <button type="button" className="ghost" onClick={fillSample}>
                 샘플 채우기
+              </button>
+              <button type="button" className="ghost" onClick={refreshForm}>
+                새로고침
               </button>
               <button type="submit" disabled={submitting}>
                 {submitting ? "등록 중" : "등록"}
