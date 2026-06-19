@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extractBacklogItems } from "@/lib/backlog";
+import { analyzeMinutesFormat, analyzePlanFormat, extractBacklogItems } from "@/lib/backlog";
 import { appendMinutesToSheet } from "@/lib/google";
 import { createJiraBacklogItems } from "@/lib/jira";
 import { passwordSession } from "@/lib/passwordAuth";
@@ -32,6 +32,21 @@ export async function POST(request) {
     }
 
     const payload = validatePayload(await request.json());
+    const minutesCheck = analyzeMinutesFormat(payload.minutes);
+    const planCheck = analyzePlanFormat(payload.plan);
+    const formatIssues = [...minutesCheck.issues, ...planCheck.issues];
+
+    if (formatIssues.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "회의록 또는 다음 할 일 형식을 확인해주세요.",
+          details: formatIssues
+        },
+        { status: 400 }
+      );
+    }
+
     const items = extractBacklogItems(payload.plan);
     const jira = await createJiraBacklogItems(payload.plan);
     let sheet = { skipped: true, reason: "Google Sheets update is off." };

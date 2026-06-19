@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { analyzeMinutesFormat, analyzePlanFormat, extractBacklogItems as extractPlanItems } from "@/lib/backlog";
 
 const sampleMinutes = `# 논의 내용
 - 최근 실험 결과를 확인함
@@ -85,26 +86,52 @@ function formatDraftTime(value) {
   }).format(new Date(value));
 }
 
-function extractBacklogItems(markdown) {
-  let heading = "";
-  const items = [];
+function buildFormatFeedback(form) {
+  const minutesCheck = analyzeMinutesFormat(form.minutes);
+  const planCheck = analyzePlanFormat(form.plan);
+  const issues = [...minutesCheck.issues, ...planCheck.issues];
 
-  for (const line of markdown.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    const headingMatch = trimmed.match(/^#{1,6}\s+(.+)$/);
-    if (headingMatch) {
-      heading = headingMatch[1].trim();
-      continue;
-    }
+  return {
+    valid: issues.length === 0,
+    issues,
+    minutesCheck,
+    planCheck
+  };
+}
 
-    const itemMatch = trimmed.match(/^\d+\.\s+(.+)$/);
-    if (itemMatch) {
-      const text = itemMatch[1].trim();
-      items.push(heading ? `[${heading}] ${text}` : text);
-    }
+async function parseApiResponse(response) {
+  const text = await response.text();
+  if (!text) {
+    return {};
   }
 
-  return items;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      error: `서버 응답을 읽지 못했습니다. (${response.status})`,
+      raw: text
+    };
+  }
+}
+
+function persistLocalStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removeLocalStorage(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(value) {
@@ -184,6 +211,7 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [formatFeedback, setFormatFeedback] = useState(null);
   const [drafts, setDrafts] = useState([]);
   const [selectedDraftId, setSelectedDraftId] = useState("");
   const [session, setSession] = useState({ loading: true, authenticated: false, passwordConfigured: false });
@@ -192,8 +220,8 @@ export default function Home() {
 
   useEffect(() => {
     fetch("/api/auth/session")
-      .then((response) => response.json())
-      .then((data) => setSession({ loading: false, ...data }))
+      .then(async (response) => ({ response, data: await parseApiResponse(response) }))
+      .then(({ data }) => setSession({ loading: false, ...data }))
       .catch(() => setSession({ loading: false, authenticated: false, passwordConfigured: false }));
   }, []);
 
@@ -232,19 +260,19 @@ export default function Home() {
       return;
     }
 
-    const normalized = normalizeForm(form);
-    if (hasRestorableContent(normalized)) {
-      localStorage.setItem(
-        AUTO_SAVE_STORAGE_KEY,
-        JSON.stringify({
-          savedAt: new Date().toISOString(),
-          form: normalized
-        })
-      );
-      return;
+      const normalized = normalizeForm(form);
+      if (hasRestorableContent(normalized)) {
+        persistLocalStorage(
+          AUTO_SAVE_STORAGE_KEY,
+          JSON.stringify({
+            savedAt: new Date().toISOString(),
+            form: normalized
+          })
+        );
+        return;
     }
 
-    localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
+    removeLocalStorage(AUTO_SAVE_STORAGE_KEY);
   }, [form, storageReady]);
 
   useEffect(() => {
@@ -255,7 +283,7 @@ export default function Home() {
     }
   }, []);
 
-  const backlogItems = useMemo(() => extractBacklogItems(form.plan), [form.plan]);
+  const backlogItems = useMemo(() => extractPlanItems(form.plan), [form.plan]);
   const minutesPreview = useMemo(() => markdownToHtml(form.minutes), [form.minutes]);
 
   function updateField(event) {
@@ -275,7 +303,7 @@ export default function Home() {
   function refreshForm() {
     setForm(freshDefaultForm());
     setSelectedDraftId("");
-    localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
+    removeLocalStorage(AUTO_SAVE_STORAGE_KEY);
     setToast({ type: "success", text: "입력 내용을 새로 시작했습니다." });
   }
 
@@ -287,7 +315,10 @@ export default function Home() {
       form: normalizeForm(form)
     };
     const nextDrafts = [draft, ...drafts].slice(0, MAX_DRAFTS);
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(nextDrafts));
+    if (!persistLocalStorage(DRAFT_STORAGE_KEY, JSON.stringify(nextDrafts))) {
+      setToast({ type: "warn", text: "임시 저장에 실패했습니다. 브라우저 저장 공간을 확인해주세요." });
+      return;
+    }
     setDrafts(nextDrafts);
     setSelectedDraftId(draft.id);
     setToast({ type: "success", text: "임시 저장했습니다." });
@@ -306,8 +337,17 @@ export default function Home() {
 
   async function submit(event) {
     event.preventDefault();
-    setSubmitting(true);
     setToast(null);
+
+    const feedback = buildFormatFeedback(form);
+    if (!feedback.valid) {
+      setFormatFeedback(feedback);
+      setPreview("validation");
+      setToast({ type: "warn", text: "형식이 맞지 않는 부분이 있어요. 미리보기에서 확인해주세요." });
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
       const response = await fetch("/api/minutes", {
@@ -315,10 +355,10 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form)
       });
-      const result = await response.json();
+      const result = await parseApiResponse(response);
 
       if (result.authRequired) {
-        localStorage.setItem(
+        persistLocalStorage(
           AUTO_SAVE_STORAGE_KEY,
           JSON.stringify({
             savedAt: new Date().toISOString(),
@@ -336,6 +376,16 @@ export default function Home() {
       }
 
       if (!response.ok || !result.ok) {
+        if (response.status === 400 && Array.isArray(result.details) && result.details.length) {
+          setFormatFeedback({
+            valid: false,
+            issues: result.details,
+            minutesCheck: analyzeMinutesFormat(form.minutes),
+            planCheck: analyzePlanFormat(form.plan)
+          });
+          setPreview("validation");
+          throw new Error(result.error || "형식을 확인해주세요.");
+        }
         throw new Error(result.error || "등록에 실패했습니다.");
       }
 
@@ -346,13 +396,17 @@ export default function Home() {
       }
 
       const jiraCount = result.jira?.created?.length || 0;
+      const jiraFailedCount = result.jira?.failed?.length || 0;
+      const sheetWarnings = result.sheet?.warnings?.length ? ` Sheets 경고 ${result.sheet.warnings.length}건.` : "";
+      const jiraWarnings = jiraFailedCount ? ` Jira 실패 ${jiraFailedCount}건.` : "";
       const sprintText = result.jira?.sprint?.skipped
         ? ` Sprint 미할당: ${result.jira.sprint.reason}`
         : result.jira?.sprint?.sprintName
           ? ` Sprint: ${result.jira.sprint.sprintName}.`
           : "";
-      localStorage.removeItem(AUTO_SAVE_STORAGE_KEY);
-      setToast({ type: "success", text: `${sheetsText}Jira ${jiraCount}개 생성 완료.${sprintText}` });
+
+      removeLocalStorage(AUTO_SAVE_STORAGE_KEY);
+      setToast({ type: jiraFailedCount || result.sheet?.warnings?.length ? "warn" : "success", text: `${sheetsText}Jira ${jiraCount}개 생성 완료.${jiraWarnings}${sheetWarnings}${sprintText}` });
     } catch (error) {
       setToast({ type: "warn", text: error.message });
     } finally {
@@ -370,7 +424,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password })
       });
-      const result = await response.json();
+      const result = await parseApiResponse(response);
       if (!response.ok || !result.ok) {
         throw new Error(result.error || "로그인에 실패했습니다.");
       }
@@ -509,6 +563,7 @@ export default function Home() {
           type={preview}
           minutesPreview={minutesPreview}
           backlogItems={backlogItems}
+          formatFeedback={formatFeedback}
           onClose={() => setPreview(null)}
         />
       ) : null}
@@ -533,17 +588,24 @@ function groupBacklogItems(items) {
   }, []);
 }
 
-function PreviewDialog({ type, minutesPreview, backlogItems, onClose }) {
+function PreviewDialog({ type, minutesPreview, backlogItems, formatFeedback, onClose }) {
   const isJira = type === "jira";
+  const isValidation = type === "validation";
   const groups = isJira ? groupBacklogItems(backlogItems) : [];
 
   return (
     <div className="modalBackdrop" role="presentation" onMouseDown={onClose}>
-      <section className="modalPanel" role="dialog" aria-modal="true" aria-label={isJira ? "Jira 백로그 미리보기" : "회의록 미리보기"} onMouseDown={(event) => event.stopPropagation()}>
+      <section
+        className="modalPanel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isValidation ? "입력 형식 확인" : isJira ? "Jira 백로그 미리보기" : "회의록 미리보기"}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header className="modalHeader">
           <div>
-            <p>{isJira ? `${backlogItems.length}개 항목` : "Markdown Preview"}</p>
-            <h2>{isJira ? "Jira 백로그 미리보기" : "회의록 미리보기"}</h2>
+            <p>{isValidation ? "Format Check" : isJira ? `${backlogItems.length}개 항목` : "Markdown Preview"}</p>
+            <h2>{isValidation ? "입력 형식 확인" : isJira ? "Jira 백로그 미리보기" : "회의록 미리보기"}</h2>
           </div>
           <button type="button" className="iconButton closeButton" onClick={onClose} title="닫기" aria-label="닫기">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -553,7 +615,58 @@ function PreviewDialog({ type, minutesPreview, backlogItems, onClose }) {
           </button>
         </header>
 
-        {isJira ? (
+        {isValidation ? (
+          <div className="validationPreview">
+            <section className="validationPanel">
+              <h3>확인할 내용</h3>
+              {formatFeedback?.issues?.length ? (
+                <ul className="validationList">
+                  {formatFeedback.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="empty modalEmpty">형식 문제는 발견되지 않았습니다.</p>
+              )}
+            </section>
+
+            <section className="validationPanel">
+              <h3>권장 형식 예시</h3>
+              <pre className="formatExample">{`회의록
+# 논의 내용
+- 결정 사항
+- 공유 내용
+
+다음 할 일
+# PPT 반영사항
+1. 제목 문구 수정
+2. 실험 결과 정리`}</pre>
+            </section>
+
+            <section className="validationPanel">
+              <h3>Jira로 생성될 항목 미리보기</h3>
+              {backlogItems.length ? (
+                <div className="jiraPreview compactPreview">
+                  {groupBacklogItems(backlogItems).map((group) => (
+                    <section className="jiraGroup" key={group.title}>
+                      <h3>{group.title}</h3>
+                      <ol>
+                        {group.items.map((item, index) => (
+                          <li key={`${group.title}-${item}`}>
+                            <span>{String(index + 1).padStart(2, "0")}</span>
+                            <p>{item}</p>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty modalEmpty">번호 목록이 잡히지 않았습니다. `1. 작업 항목` 형식인지 확인해주세요.</p>
+              )}
+            </section>
+          </div>
+        ) : isJira ? (
           <div className="jiraPreview">
             {groups.length ? (
               groups.map((group) => (

@@ -386,11 +386,61 @@ button:disabled {
   overflow: auto;
 }
 
+.validationPreview {
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 150px);
+  overflow: auto;
+  padding: 18px;
+  background: #f8faf7;
+}
+
+.validationPanel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.validationPanel h3 {
+  margin: 0 0 12px;
+  color: var(--blue);
+  font-size: 15px;
+}
+
+.validationList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.validationList li {
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.formatExample {
+  margin: 0;
+  white-space: pre-wrap;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcfa;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
 .jiraPreview {
   display: grid;
   gap: 14px;
   padding: 18px;
   background: #f8faf7;
+}
+
+.compactPreview {
+  max-height: none;
+  padding: 0;
+  background: transparent;
 }
 
 .jiraGroup {
